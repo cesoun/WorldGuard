@@ -61,20 +61,6 @@ public abstract class AbstractSessionManager implements SessionManager {
     private static final BiPredicate<World, LocalPlayer> BYPASS_PERMISSION_TEST = (world, player) -> {
         return player.hasPermission("worldguard.region.bypass." + world.getName());
     };
-
-    private final LoadingCache<WorldPlayerTuple, Boolean> bypassCache = CacheBuilder.newBuilder()
-            .maximumSize(1000)
-            .expireAfterWrite(2, TimeUnit.SECONDS)
-            .build(CacheLoader.from(tuple -> BYPASS_PERMISSION_TEST.test(tuple.getWorld(), tuple.getPlayer())));
-
-    private final LoadingCache<CacheKey, Session> sessions = CacheBuilder.newBuilder()
-            .expireAfterAccess(SESSION_LIFETIME, TimeUnit.MINUTES)
-            .build(CacheLoader.from(key ->
-                    createSession(key.playerRef.get())));
-
-    private boolean hasCustom = false;
-    private List<Handler.Factory<? extends Handler>> handlers = new LinkedList<>();
-
     private static final List<Handler.Factory<? extends Handler>> defaultHandlers = new LinkedList<>();
 
     static {
@@ -97,6 +83,17 @@ public abstract class AbstractSessionManager implements SessionManager {
         defaultHandlers.addAll(Arrays.asList(factories));
     }
 
+    private final LoadingCache<WorldPlayerTuple, Boolean> bypassCache = CacheBuilder.newBuilder()
+            .maximumSize(1000)
+            .expireAfterWrite(2, TimeUnit.SECONDS)
+            .build(CacheLoader.from(tuple -> BYPASS_PERMISSION_TEST.test(tuple.getWorld(), tuple.getPlayer())));
+    private boolean hasCustom = false;
+    private List<Handler.Factory<? extends Handler>> handlers = new LinkedList<>();
+    private final LoadingCache<CacheKey, Session> sessions = CacheBuilder.newBuilder()
+            .expireAfterAccess(SESSION_LIFETIME, TimeUnit.MINUTES)
+            .build(CacheLoader.from(key ->
+                    createSession(key.playerRef.get())));
+
     protected AbstractSessionManager() {
         handlers.addAll(defaultHandlers);
     }
@@ -109,8 +106,7 @@ public abstract class AbstractSessionManager implements SessionManager {
     @Override
     public boolean registerHandler(Handler.Factory<? extends Handler> factory, @Nullable Handler.Factory<? extends Handler> after) {
         if (factory == null) return false;
-        WorldGuard.logger.log(Level.INFO, "Registering session handler "
-                + factory.getClass().getEnclosingClass().getName());
+        WorldGuard.logger.log(Level.INFO, "Registering session handler " + getFactoryClassName(factory));
         hasCustom = true;
         if (after == null) {
             handlers.add(factory);
@@ -127,10 +123,10 @@ public abstract class AbstractSessionManager implements SessionManager {
     public boolean unregisterHandler(Handler.Factory<? extends Handler> factory) {
         if (defaultHandlers.contains(factory)) {
             WorldGuard.logger.log(Level.WARNING, "Someone is unregistering a default WorldGuard handler: "
-                    + factory.getClass().getEnclosingClass().getName() + ". This may cause parts of WorldGuard to stop functioning");
+                    + getFactoryClassName(factory) + ". This may cause parts of WorldGuard to stop functioning");
         } else {
             WorldGuard.logger.log(Level.INFO, "Unregistering session handler "
-                    + factory.getClass().getEnclosingClass().getName());
+                    + getFactoryClassName(factory));
         }
         return handlers.remove(factory);
     }
@@ -177,6 +173,20 @@ public abstract class AbstractSessionManager implements SessionManager {
         }
         session.initialize(player);
         return session;
+    }
+
+    /**
+     * Get the Class Name for the given Handler.Factory
+     *
+     * @param factory the Handler.Factory to get the Class Name for
+     * @return the EnclosingClass.Name if there is an EnclosingClass present, otherwise the Class.Name
+     */
+    private String getFactoryClassName(Handler.Factory<? extends Handler> factory) {
+        if (factory.getClass().getEnclosingClass() == null) {
+            return factory.getClass().getName();
+        }
+
+        return factory.getClass().getEnclosingClass().getName();
     }
 
     protected static final class CacheKey {
